@@ -1,0 +1,314 @@
+{
+    name             = "pr_event"
+    pipeline_type    = "V2"
+    execution_mode   = "SUPERSEDED"
+    create_s3_source = true
+    source_stage = {
+      stage_name = "Source"
+      name       = "Source"
+      category   = "Source"
+      provider   = "S3"
+      configuration = {
+        S3ObjectKey          = "trigger_pipeline.zip"
+        PollForSourceChanges = "false"
+      }
+      output_artifacts = ["SourceArtifact"]
+    }
+    stages = [
+      {
+        stage_name      = "Launch-Predict-SemVer"
+        name            = "Launch-Predict-SemVer"
+        description     = "Predict semantic version for the next git tag based on the changes in the PR."
+        category        = "Build"
+        provider        = "CodeBuild"
+        project_name    = "semver_predict"
+        buildspec       = "buildspec.yml"
+        input_artifacts = ["SourceArtifact"]
+        configuration = {
+          EnvironmentVariables = <<EOF
+            [
+              {
+                  "name": "LAUNCH_ACTION",
+                  "value": "launch-predict-semver",
+                  "type": "PLAINTEXT"
+              }
+            ]
+          EOF
+        }
+        codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "secretsmanager:GetSecretValue" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+        }, {
+        stage_name      = "Simulated-Merge"
+        name            = "Sim-Merge"
+        description     = "Simulate the merge of the PR branch into the target branch."
+        category        = "Build"
+        provider        = "CodeBuild"
+        project_name    = "sim_merge"
+        buildspec       = "buildspec.yml"
+        input_artifacts = ["SourceArtifact"]
+        configuration = {
+          EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"simulated-merge",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+        }
+        codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "secretsmanager:GetSecretValue" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+        }, {
+        stage_name      = "TG-Plan-Service"
+        name            = "TG-Plan-Service"
+        description     = "Terragrunt plan the configuration changes for the infrastructure.(Not pipelines or git webhooks)"
+        category        = "Build"
+        provider        = "CodeBuild"
+        project_name    = "plan_svc"
+        buildspec       = "buildspec.yml"
+        input_artifacts = ["SourceArtifact"]
+        configuration = {
+          EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource service --plan --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"qa",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"AWS_DEPLOYMENT_ROLE",
+                "value":"arn:aws:iam::020127659860:role/demo_iam-useast2-sandbox-000-role-000",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+        }
+        codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "secretsmanager:GetSecretValue" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+        }, {
+        stage_name      = "TG-Plan-Git-Webhooks"
+        name            = "TG-Plan-Git-Webhooks"
+        description     = "Terragrunt plan git webhooks. This stage will run in pr_event pipeline but would run terragrunt plan just when changes are made in `internals` folder."
+        category        = "Build"
+        provider        = "CodeBuild"
+        project_name    = "plan_hooks"
+        buildspec       = "buildspec.yml"
+        input_artifacts = ["SourceArtifact"]
+        configuration = {
+          EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource webhook --plan --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"root",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"AWS_DEPLOYMENT_ROLE",
+                "value":"arn:aws:iam::020127659860:role/demo_iam-useast2-sandbox-000-role-000",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+        }
+        codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "secretsmanager:GetSecretValue" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+        }, {
+        stage_name      = "TG-Plan-Pipelines"
+        name            = "TG-Plan-Pipelines"
+        description     = "Terragrunt plan pipelines. This stage will run in pr_event pipeline but would run terragrunt plan just when changes are made in `internals` folder."
+        category        = "Build"
+        provider        = "CodeBuild"
+        project_name    = "plan_pipeln"
+        buildspec       = "buildspec.yml"
+        input_artifacts = ["SourceArtifact"]
+        configuration = {
+          EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource pipeline --plan --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"root",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"AWS_DEPLOYMENT_ROLE",
+                "value":"arn:aws:iam::020127659860:role/demo_iam-useast2-sandbox-000-role-000",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+        }
+        codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "secretsmanager:GetSecretValue" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+        }, {
+        stage_name      = "Pre-Deploy-Tests"
+        name            = "Pre-Deploy-Tests"
+        description     = "Run regula/conftests/OPA tests for the configuration changes."
+        category        = "Build"
+        provider        = "CodeBuild"
+        project_name    = "pre_deploy"
+        buildspec       = "buildspec.yml"
+        input_artifacts = ["SourceArtifact"]
+        configuration = {
+          EnvironmentVariables = <<EOF
+            [
+              {
+                "name": "LAUNCH_ACTION",
+                "value": "pre-deploy-test",
+                "type": "PLAINTEXT"
+              },
+              {
+                "name": "IS_PIPELINE",
+                "value": "true",
+                "type": "PLAINTEXT"
+              },
+              {
+                "name": "TARGETENV",
+                "value": "qa",
+                "type": "PLAINTEXT"
+              }
+            ]
+          EOF
+        }
+        codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "secretsmanager:GetSecretValue" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+    }]
+    }

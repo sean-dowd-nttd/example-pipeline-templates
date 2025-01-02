@@ -1,0 +1,217 @@
+{
+    name             = "internals"
+    pipeline_type    = "V2"
+    create_s3_source = true
+    source_stage = {
+      stage_name = "Source"
+      name       = "Source"
+      category   = "Source"
+      provider   = "S3"
+      configuration = {
+        S3ObjectKey          = "trigger_pipeline.zip"
+        PollForSourceChanges = "false"
+      }
+      output_artifacts = ["SourceArtifact"]
+    }
+    stages = [{
+      stage_name      = "TG-Plan-Git-Webhooks"
+      name            = "TG-Plan-Git-Webhooks"
+      description     = "Terragrunt plan git webhooks"
+      category        = "Build"
+      provider        = "CodeBuild"
+      project_name    = "plan_hooks"
+      buildspec       = "buildspec.yml"
+      input_artifacts = ["SourceArtifact"]
+      configuration = {
+        EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource webhook --plan --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"root",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"LOOKHERE",
+                "value":"there are 3 but should be more with the common env vars",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+      }
+      codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+      }, {
+      stage_name      = "TG-Plan-Pipelines"
+      name            = "TG-Plan-Pipelines"
+      description     = "Terraform plan pipelines"
+      category        = "Build"
+      provider        = "CodeBuild"
+      project_name    = "plan_pipln"
+      buildspec       = "buildspec.yml"
+      input_artifacts = ["SourceArtifact"]
+      configuration = {
+        EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource pipeline --plan --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"root",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"AWS_DEPLOYMENT_ROLE",
+                "value":"arn:aws:iam::020127659860:role/demo_iam-useast2-sandbox-000-role-000",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+      }
+      codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+      }, {
+      stage_name      = "Deploy-Git-Webhooks"
+      name            = "Deploy-Git-Webhooks"
+      description     = "Deploy git webhooks"
+      category        = "Build"
+      provider        = "CodeBuild"
+      project_name    = "deploy_hooks"
+      buildspec       = "buildspec.yml"
+      input_artifacts = ["SourceArtifact"]
+      configuration = {
+        EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource webhook --apply --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"root",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"AWS_DEPLOYMENT_ROLE",
+                "value":"arn:aws:iam::020127659860:role/demo_iam-useast2-sandbox-000-role-000",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+      }
+      codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+      }, {
+      stage_name      = "Deploy-Pipelines"
+      name            = "Deploy-Pipelines"
+      description     = "Deploy pipelines"
+      category        = "Build"
+      provider        = "CodeBuild"
+      project_name    = "deploy_pipln"
+      buildspec       = "buildspec.yml"
+      input_artifacts = ["SourceArtifact"]
+      configuration = {
+        EnvironmentVariables = <<EOF
+            [
+              {
+                "name":"LAUNCH_ACTION",
+                "value":"launch terragrunt --target-environment $TARGETENV --platform-resource pipeline --apply --generation",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"TARGETENV",
+                "value":"root",
+                "type":"PLAINTEXT"
+              },
+              {
+                "name":"AWS_DEPLOYMENT_ROLE",
+                "value":"arn:aws:iam::020127659860:role/demo_iam-useast2-sandbox-000-role-000",
+                "type":"PLAINTEXT"
+              }
+            ]
+          EOF
+      }
+      codebuild_iam = <<EOF
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": [
+                  "kms:Decrypt",
+                  "kms:DescribeKey"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+              },
+              {
+                "Action": [ "sts:AssumeRole" ],
+                "Effect": "Allow",
+                "Resource": "*"
+              }
+            ]
+          }
+        EOF
+    }]
+    }
